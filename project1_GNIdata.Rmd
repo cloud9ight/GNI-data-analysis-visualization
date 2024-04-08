@@ -1,0 +1,1110 @@
+---
+title: "Project1 Gross National Income Per Capita"
+author: "Zihan Li (24049427)"
+
+output: 
+  html_document:
+    
+    theme: united
+    highlight: tango
+    toc: yes
+runtime: shiny
+---
+
+<span style="font-size: 24px;">[My Shiny APP Youtube URL](https://www.youtube.com/watch?v=4xLDm6Taf5c&ab_channel=HazLi)</span>
+
+## Introduction
+
+The Dataset I am using is obtained from *kaggle.com*, created from *Human Development Reports*.  
+
+- Gross National Income Per Capita is a key economic indicator that measures the average income earned by individuals in a country. Disparities in GNI per capita among different countries can highlight variations in income distribution and economic development levels.  
+
+- This dataset is widely used to compare and analyze the economic performance and prosperity of different nations over time.
+
+*GNI/gni short for Gross National Income*
+
+
+
+[My Shiny APP Youtube URL](https://www.youtube.com/watch?v=4xLDm6Taf5c&ab_channel=HazLi)
+
+### More Information
+
+Original link:
+[https://www.kaggle.com/datasets/iamsouravbanerjee/gross-national-income-per-capita]
+
+[Download Dataset](https://www.kaggle.com/datasets/iamsouravbanerjee/gross-national-income-per-capita/download?datasetVersionNumber=2)
+
+Usability：10.00
+
+## Import the CSV File and View the Data
+
+```{r}
+
+gni <- read.csv("Gross National Income Per Capita.csv")
+
+# Disable the results are printing in scientific notation
+options(scipen = 999)
+```
+In the "Environment" pane, We could have a basic glance of the raw data. Noticed there are 195 observations and 39 variables. 
+
+## Initial EDA
+
+### Library Loading
+```{r library, echo = TRUE, results = 'hide'}
+suppressMessages(library(tidyverse))
+suppressMessages(library(shiny))
+suppressMessages(library(knitr))
+suppressMessages(library(formattable))
+suppressMessages(library(crayon))
+suppressMessages(library(plotly)) 
+suppressMessages(library(gridExtra))
+suppressMessages(library(kableExtra))
+suppressMessages(library(maps))
+suppressMessages(library(DT))
+suppressMessages(library(shinythemes))
+suppressMessages(library(scales))
+```
+*The tidyverse is an collection of R packages designed for data science. The core tidyverse includes the packages like ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats.*
+
+### Data Summary
+```{r glance, echo = TRUE, results = 'hide'}
+# View the structure of the data frame
+str(gni)
+
+# Get summary statistics
+summary(gni)
+
+# View the first few rows
+head(gni)
+```
+- By checking the data frame and summary, there are 6 character variables (also contain 3 categorical variables: *Continent*, *Hemisphere*, *Human.Development.Groups*, and *UNDP.Developing.Regions*). Others are all numerical variables (*HDI.Rank..2021.* refers to Human Development Index Rank for 2021, therefore it is an integer variable. Other 32 variables are specific GNI data of each country, rounded to four decimal places.)
+
+- Also, observed that a time frame from 1990 to 2021 contained in those numerical variable names. Exactly 32 years of data to be recorded.  
+
+By checking the first few rows, we could immediately see some data is missing under the column of *UNDP.Developing.Regions*. Further investigation based on the UNDP website (https://hdr.undp.org/data-center/documentation-and-downloads) -- and click on *Developing regions*. Now we are clear on those **obs./countries without a *UNDP.Developing.Regions* value are all developed countries**. Also, list all developing regions and their abbreviations since we will use the data later:   
+- AS: Arab States   
+- EAP: East Asia and the Pacific  
+- ECA: Europe and Central Asia   
+- LAC: Latin America and the Caribbean  
+- SA: South Asia   
+- SSA: Sub-Saharan Africa 
+
+```{r, echo = TRUE, results='asis'}
+# check whether those obs./countries without a UNDP.Developing.Regions value are developed countries
+selected_rows <- gni %>%
+  select(Country, HDI.Rank..2021., UNDP.Developing.Regions) %>%
+  filter(UNDP.Developing.Regions == "") %>%
+  arrange(HDI.Rank..2021.)
+
+kable(head(selected_rows,5), row.names = FALSE, booktabs = TRUE )
+
+# seems our assumption is right
+```
+### Visualization Trial
+
+```{r first_trial, echo=TRUE,warning=FALSE}
+ggplot(data = gni, aes(x = Country, y = Gross.National.Income.Per.Capita..1990. )) +
+  geom_point() +
+  geom_smooth(method="lm", formula = y ~ x, se = FALSE)+
+  labs(title = "Scatterplot of Country and GNI Per Capita in 1990", x = "Country", y = "GNI Per Capita") +
+  theme(
+    axis.text.x = element_blank())
+```
+
+- In our first trial of scatter plot, ticks on the x-axis are not readable and the linear smoothing line is not visible, because the data points are too sparse or spread out, there is no linear relation between each data(our observations are 195 countries). Objects should be better considered in later visualization works.
+- Also, *Warning: Removed 11 rows containing missing values* **indicating that data cleaning must be done first.**
+
+```{r,fig.width = 7}
+# Create a line pot using AUS & BRA data
+aus_values <-gni[9,8:ncol(gni)]
+bra_values <-gni[24,8:ncol(gni)]
+x_values <- colnames(gni)[8:ncol(gni)]
+# Use regular expression to replace original colnames with only number
+new_column_names <- sub('.*\\.(\\d+)\\..*', '\\1', x_values)
+
+aus_bra_gni <- data.frame(x = new_column_names, y1 =as.numeric(aus_values), y2 =as.numeric(bra_values) )
+
+ggplot(data = aus_bra_gni, aes(x, y, group = 1)) + 
+  geom_line(aes(y=y1,color="Australia")) + 
+  geom_line(aes(y=y2, color="Brazil")) + 
+  geom_point(aes(y = y1), color = "blue") + 
+  geom_point(aes(y = y2), color = "green") +
+  labs (title = "GNI Per Capita Trends in Australia and Brazil",x="Year",y="GNI Per Capita", color="Country") +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+**This line plot with two variables is highly readable** than last plot, we could see a huge income gap between AUS and BRA. Also the trend of Australian economy development is continuously going up throughout the years while Brazil's economy was relatively steady and had undergone some drawback after the year of 2013. 
+
+Although, **we can not just analyze each country's GNI trends(also skip col.2-5) but focus on some more general outputs**. So next step, we will do data cleaning to deal with missing data and data transformation **to categorize all the obs. according to the listed categorical variables**.
+
+### Own Useful Functions
+
+Since we will do a lot of works on selecting each country's GNI data, I create a function called country_desc, it takes two parameters, country name and certain data to be shown(rank, group and GNI data from 1990-2021)
+```{r function1_select_country}
+country_desc <- function(dataset, country, description) {
+  selected_country <- dataset[gni$Country == country, ]
+  
+  
+  if ("rank" %in% description ) {
+    return (selected_country$HDI.Rank..2021.)
+  }
+  
+  if ("group" %in% description ) {
+    return (selected_country$Human.Development.Groups)
+  }
+  
+  if ("gniData" %in% description ) {
+    return (selected_country[, 8:39])
+  }
+}
+
+# check if it's working as we expect
+country_desc(gni, "United States", "rank")
+country_desc(gni, "Australia","group")
+```
+We will use country_desc(gni, *"country_name"*,"gniData") a lot in later analysis.
+
+Also, for better visualization, in above line plot code chunk, we replace original very long and repetitive colnames with only year number which makes the data frame and plots a lot more easier to read. Therefore create a function in case we will use it on copied gni data frame. 
+```{r}
+extract_year <- function(dataset, option) {
+  x_values <- colnames(dataset)[8:ncol(dataset)]
+  new_column_names <- sub('.*\\.(\\d+)\\..*', '\\1', x_values)
+   new_data <- dataset
+  colnames(new_data)[8:ncol(new_data)] <- new_column_names
+  
+  if("colname" %in% option) {
+    return (new_column_names)
+  }
+  
+  if ("new" %in% option) {
+    return (new_data)
+  }
+}
+
+extract_year(gni, "colname")
+
+# also create a new data frame, colname with only year
+
+gni_only_year <- extract_year(gni, "new")
+
+```
+
+
+**Noted:**
+
+More functions will be listed in later code chuck. Like the *multiple_line(country_names)* I created is very powerful. It takes multiple country names(a vector) as parameter and return a line plot with the 1990-2021 GNI data of these countries. and *hd_group_pie(continent_name)* will create a pie chart presenting the HD group proportion in aimed continent. Also *get_group_summary(group_column, summary_column) to check the total number of four different human development groups in each category*.
+
+
+## Data Cleaning and Transformation
+
+### Identify Missing Values
+
+```{r na_value, echo=TRUE, results='hide'}
+# Select missing values ( both NA values and empty values are considered)
+sum(is.na(gni))
+# Using the function we created to extract only year, new as option means the output will be a new data frame instead of imputing colnames on our original dataset
+colSums(is.na(extract_year(gni, "new")) | gni =="")
+
+# Get the Country names containing missing values
+# And we already aware col6 represent developing/developed country, so skip this col 
+deve_missing <- gni$Country[which(is.null(gni[, 5])| gni[, 5]=="")] # this col missing values are "" not NA
+
+# Then create a function to list the country name with missing values
+find_missing_countries <- function(col_index) {
+  missing_countries <- gni$Country[which(is.na(gni[, col_index]))]
+  return(missing_countries)
+}
+
+# Test 
+find_missing_countries(7)
+print(gni$Country[which(is.na(gni[, 7]))]) 
+
+# By checking the colSums and raw csv file, countries with missing values are the same unless data is not NA in the next year. So we only select col 8,13,23,26
+
+# Create a missing value table
+row1 <- paste(deve_missing, collapse = ", ")
+row2 <- paste(find_missing_countries(7), collapse = ", ")
+row3 <- paste(find_missing_countries(8), collapse = ", ")
+row4 <- paste(find_missing_countries(13), collapse = ", ")
+row5 <- paste(find_missing_countries(23), collapse = ", ")
+row6 <- paste(find_missing_countries(26), collapse = ", ")
+row_name_item <-c("Development", "2021rank","1990-1994","1995-2004","2005-2007","2008-2021")
+country_missing_data <- data.frame(Countries = c(row1, row2, row3, row4, row5, row6), row.names = row_name_item)
+```
+Perfect!
+Now with some formatting works, we have a decent table to consider about **missing values**.
+
+```{r}
+formattable(country_missing_data, list(
+  Name = formatter("span", style = ~ style(font.weight = "bold"))
+))
+```
+Based on some researches on authority websites, it's clear that *Monaco, Nauru* are microstates with very little population. *North Korea and Somalia* do not regularly report data due to conflict, lack of statistical capacity, and political reasons. And, some countries do not have data in the period of 1990-1994 simply because they did not exist (e.g. countries of the former Soviet Union, South Sudan).  
+*Reference:* [https://datahelpdesk.worldbank.org/knowledgebase/articles/191133-why-are-some-data-not-available] (https://datahelpdesk.worldbank.org/knowledgebase/articles/191133-why-are-some-data-not-available)  
+
+
+**In this case, there are not so many NA values and they are spreading inconsistently within different columns, so I won't drop them or replace NA with other data for now.  
+
+Mainly, because data from those countries is not critical and won't affect my further data visualization. Also, statistic data related to nation must be obtained from official sources therefore I can't use mean, median or regression imputation to impute missing values.** 
+
+**I will deal with these data case by case.** 
+
+#### Cleaning Colnames
+
+By using the function created earlier, we create a new data frame with clean and short colname (since we already know what each col represent for). Also round floats to integers.
+```{r}
+gni_only_year <- extract_year(gni, "new")
+
+gni_clean <- gni_only_year %>%
+  rename(Groups = Human.Development.Groups, DevelopingRegions = UNDP.Developing.Regions, HDRank = HDI.Rank..2021.) %>%
+   mutate(across(8:ncol(.), ~ round(., 0)))
+head(gni_clean[, 1:8], n = 5)
+```
+
+
+### Data Transformation
+
+#### Subgrouping Data 
+
+Col6 represent developing/developed country, therefore creating new data frames according to this information
+```{r}
+# Create a developing country data frame using clean gni data
+developing_gni <- gni_clean %>%
+  filter(DevelopingRegions != "")
+
+# Similarly create a developed country data frame and delete DevelopingRegions column
+developed_gni <- gni_clean %>%
+  filter(DevelopingRegions == "") %>%
+  select(-DevelopingRegions)
+
+#check
+#head(developed_gni[, 1:8], n = 5)
+datatable(developed_gni[, 1:8])
+```
+
+**Sorting data based On Different Categorical Variables**
+
+```{r subgroup, echo=TRUE, warning=FALSE}
+# Col. 3-6 check the sum of each category, use these as parameters to Subgroup Data and try to get some useful thoughts
+# check the total number of four different human development groups in each category
+get_group_summary <- function(group_column, summary_column) {
+  group_summary <- gni %>%
+    filter(Human.Development.Groups != "") %>%
+    group_by({{ group_column }}, Human.Development.Groups) %>%
+    summarize(country_count = n(),
+              .groups = "drop") 
+  
+  
+  return(group_summary)
+}
+
+# Let's check the sum of countries 
+developing_region_group <- get_group_summary(UNDP.Developing.Regions, Human.Development.Groups)%>%
+    filter(UNDP.Developing.Regions != "")
+
+knitr::kable(get_group_summary(Continent, Human.Development.Groups), caption = "Count of HD Group by Continent") %>%
+  kable_material(c("striped", "hover")) %>% 
+ scroll_box(width = "500px", height = "300px")
+
+
+
+```
+
+Note that, from the developing_region_group table, **some developing countries also fall into human development groups that are above average**. And almost all the developed countries are in the group of *Very High* Human Development.  
+
+*The Human Development Index (HDI) measures human development by average achievement in three basic dimensions — standard of living, education and health, which are assessed by three indicators — GNI per capita, expected years of schooling and life expectancy.*  [https://hdr.undp.org/data-center/human-development-index#/indicies/HDI](https://hdr.undp.org/data-center/human-development-index#/indicies/HDI)  
+
+**We will discuss and visualize the dependencies between Gross per capits and HDI rank by development groups later with scatter plots.**
+
+
+#### Using New Variables
+
+Use Growth Rate & AVG values to check the GNI trends of each countries, and make comparisons
+
+```{r}
+no_na_gni <- na.omit(gni)
+growth_rate <- round((no_na_gni[, 39] - no_na_gni[, 8]) / no_na_gni[, 8] *100,0) ## drop na
+mean = round(rowMeans(no_na_gni[8:39], na.rm = TRUE),0)
+
+## create a new data frame and we will be using Growth Rate $ AVG as Indicator a lot later
+
+
+
+growth_table_new <- data.frame(Country = no_na_gni$Country,  
+                               Continent = no_na_gni$Continent,
+                               Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.,
+                               GrowthRate = growth_rate, 
+                               AVG = mean)
+
+datatable(growth_table_new)
+```
+
+```{r continent_rank_avg, echo=TRUE, warning=FALSE}
+continent_rank <- gni %>%
+  group_by(Continent) %>%
+  summarize(
+    min_rank = min(HDI.Rank..2021., na.rm = TRUE),
+    max_rank = max(HDI.Rank..2021., na.rm = TRUE),
+    average_gni = mean(Gross.National.Income.Per.Capita..2021., na.rm = TRUE),
+    .groups = "drop"
+  )
+formattable(continent_rank, list(
+  Name = formatter("span", style = ~ style(font.weight = "bold"))
+))
+```
+In this table, the average of GNI in each continent is listed indicating the differences of average income earned by individuals between these continents in 2021. Individuals in European countries clearly have the highest income level while Africa only has one eighth of that level. And Asian countries rank the middle surpassing America and Oceania. We could get some universally known facts based on above tables. Moving on to the next step, we will focus on GNI values. 
+
+Since we already took average GNI into consideration, and it seems a better indicator for data visualization. I will create some copies of GNI data with a new column of average GNI of each countries and consider whether NA should be dropped or colnames should be extracted.  
+```{r echo=TRUE, results='hide'}
+
+# calculate the average GNI from 1990-2021 of each country
+with_avg <- gni %>%
+  mutate(`Average GNI (1990-2021)` = rowMeans(.[8:39]))
+
+
+# Sort the average in descending order for better visualization
+sorted_avg <- with_avg[order(-with_avg$`Average GNI (1990-2021)`), ]
+head(extract_year(sorted_avg, "new"))
+
+# Drop na & ""
+no_na_gni <- na.omit(gni)
+```
+
+#### Creating A Summary Data Frame
+```{r}
+continent_summary <- growth_table_new %>%
+  group_by(Continent) %>%
+  summarize(
+    avg_gni = round(mean(AVG),1),
+    min_gni = round(min(Latest),1),min_gni_country = Country[which.min(Latest)],
+    max_gni = round(max(Latest),1),max_gni_country = Country[which.max(Latest)],
+    `avg_rate%` = round(mean(GrowthRate),1),
+    `min_rate%` = min(GrowthRate), min_rate_country = Country[which.min(GrowthRate)],
+    `max_rate%` = max(GrowthRate), max_rate_country = Country[which.max(GrowthRate)]
+    
+
+  ) 
+formattable(continent_summary,list(
+  Name = formatter("span", style = ~ style(font.weight = "bold"))
+))
+```
+**We will have a clear understanding of min and max values within each countries and this table helps to work with further data exploratory**
+
+
+
+## Data Visulization
+
+### histogram of Viewing distribution & Counting
+```{r , warning=FALSE, fig.width = 7}
+## create a histogram based on above data transformation works
+count_his <- ggplot(data = growth_table_new, aes(x=Latest)) +
+      
+      geom_histogram(binwidth = 5000,color="white", fill="lightblue") +
+  geom_vline(aes(xintercept=mean(Latest)),
+            color="blue", linetype="dashed", size=1) +
+  stat_bin(aes(y=..count.., label=..count..), geom="text", vjust=-.5) +
+
+       labs(
+        title = "Histogram of 2021 GNI Per Capita Data",
+        x = "GNI Range",
+        y = "Count of Countries"
+      ) 
+
+count_his
+
+```
+
+Most countries' GNI per capita is lower than 25000, and the blue line represents the mean level. The range of 10000-15000 has the most countries.  
+
+Few countries have GNI values over 70000, and an outliner shows up with income level way higher than other high income countries.
+
+
+### Maps of details of Each Country
+
+```{r map, echo=TRUE, warning=FALSE, fig.width = 7}
+# create a Choropleth Maps using plotly
+map_avg <- plot_ly(with_avg, 
+               locations = ~Country, 
+               locationmode = 'country names', 
+               z = ~`Average GNI (1990-2021)`,
+               type = 'choropleth',
+               colors = colorRamp(c("#4786EC", "yellow", "red")),
+               text = ~paste("Country: ", Country, "<br> Average GNI: ", `Average GNI (1990-2021)`),
+               hoverinfo = "text") %>%
+  layout(title = "Hover or zoom in to check country details!", 
+         geo = list(showframe = FALSE, showcoastlines = FALSE, projection = list(type = 'mercator'))) %>%
+  colorbar(title = "Average GNI per Capita")
+
+map_avg
+```
+This dynamic map vividly depicts the average GNI values of each country using all the data we have in the dataset. Compared to our first trial, the data of all observed objects can be found intuitively. Very useful when we are trying to understand a country's income level and simply compare the data between countries.
+
+NA values are ignored, and from the map we further understand these countries are not critical at all, we could hardly find the location of Nauru on a global scale. Also countries with highest AVG GNI also not easy to see in the map(shown in red), because they are too small.
+
+
+
+### Bar Chart of Descending Order Average GNI
+
+```{r sorted_map, echo=TRUE, warning=FALSE, fig.width = 7}
+
+# Create a bar chart on above sorted data
+sorted_bar <- plot_ly(sorted_avg, 
+               x = ~reorder(Country, -`Average GNI (1990-2021)`), 
+               y = ~`Average GNI (1990-2021)`, 
+               type = 'bar',
+               text = ~paste("Country: ", Country, "<br> Average GNI: ", `Average GNI (1990-2021)`),
+               hoverinfo = "text",
+               marker = list( opacity = 0.65, line = list(color = 'F3B605', width = 6))) %>%
+  layout(title = ' Average GNI (1990-2021) From Highest Country To Lowest Country ',
+         xaxis = list(title = 'Country',tickangle = -90), yaxis = list(title = 'Average GNI'),
+         height = 500, width = 1000 )
+sorted_bar
+```
+This bar chart depicts countries that rank from the highest GNI to the lowest. *Because of width setting, just the first of four countries in descending order will be shown in x-axis.*
+
+Also can be seen, there are countries with **extreme values**, so next step we will break down all countries to continents and discuss outliers, mean, and quartiles attributes.
+
+### Box Plots of Comparation Between Continent
+```{r box , echo=TRUE, warning=FALSE, fig.width = 7}
+# Create a box plot for each continent
+no_na_avg <- with_avg[!is.na(with_avg$`Average GNI (1990-2021)`), ] ## drop na
+
+continent_combined <- ggplot(no_na_avg, aes(x = Continent, y = `Average GNI (1990-2021)`, fill = Continent)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) +
+ 
+  stat_summary(fun = "mean", geom = "point", shape = 8,
+               size = 2, color = "white")+
+  labs(title = 'Box Plot of Average GNI by Continent ( *is average value)',
+       x = 'Continent',
+       y = 'Average GNI') +
+  theme_minimal()
+
+continent_combined
+```
+
+
+- **We could directly see the median value and data distribution of each continent and easily know the income gap between continents.**
+
+- **Every continent has outliners, especially the one in Europe.**
+
+- **Values in Asia and Oceania are distributed highly uneven, which means there are more countries with below-average income level in Asia and Oceania. On the contrary, income levels in American, European and African countries are relatively evenly distributed when we ignore extreme values.**  
+
+- **Interestingly, Asia and Europe have a much wider range of income levels than other continents.**
+
+### Pie Charts of HD Group by continents
+
+```{r, fig.width = 7}
+#Use the function I created before get_group_summary <- function(group_column, summary_column)
+hd_group <- get_group_summary(Continent, Human.Development.Groups)
+
+#Create a new function to present the HD group proportion in aimed continent
+hd_group_pie <- function(continent_name) {
+  data_subset <- hd_group %>%
+    filter(Continent == continent_name)
+  
+  pie_chart <- ggplot(data = data_subset, aes(x = "", y = country_count, fill = Human.Development.Groups)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    labs(title = paste("HD Group Proportion in", continent_name),
+         fill = "HD Group") +
+    theme_void()
+  
+  return(pie_chart)
+}
+
+# Present five continents
+continent_names <- c("Asia", "Africa", "Europe", "America", "Oceania")
+
+pie_charts <- list()
+
+# Create pie chart for each continent and use for to add them to the list
+for (continent in continent_names) {
+  pie_charts[[continent]] <- hd_group_pie(continent)
+}
+
+grid.arrange(grobs = pie_charts, ncol = 2) 
+```
+
+
+- The proportions Asian and American countries' human development groups are more likely than other continents. Europe is extremely high and Africa is fairly low. Oceania is the most balanced.
+
+Combined with what we know from the last box plot, GNI values in Asian countries are distributed highly uneven, so we will take a close look at Asian HDI VS GNI.
+
+
+### Scatter Plots of Asian HDI VS GNI
+```{r, fig.width = 7, warning=FALSE}
+asia <- gni_clean %>%
+  filter(Continent == "Asia")
+ggplot(data = asia, aes(x = HDRank, y = `2021`, color= Groups)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+   labs(x = "HDI Rank (2021)", y = "Gross National Income Per Capita (2021)", color = "Human Development Groups") +
+  
+  ggtitle("Gross National Income Per Capita (2021) and HDI Rank (2021) by Development Group") +
+  theme_minimal() +
+  theme(legend.position = "top") +  
+  coord_cartesian(clip = "off") 
+  
+```
+
+Clearly, in the very high development group of countries spreadness of Gross National income per capita is much higher. As can be seen at the pink scatters and its regression line.
+
+**GNI per capita and human development index do have a strong correlation**
+
+
+### Line Plots of Multiple Countries 
+In this plot we will see countries that fall into the median range of the average gni in each countries.
+```{r}
+# Group by Continent and calculate median Average GNI
+continent_median <- no_na_avg %>%
+  group_by(Continent) %>%
+  summarize(median_GNI = median(`Average GNI (1990-2021)`))
+continent_median
+
+```
+
+Then manually choose **five countries in each continent have a GNI around the median values** as our objects
+
+```{r,fig.width = 7}
+# Using function country_desc(dataset, country, description)) to select gniData of Zimbabwe, Tonga, Georgia, Brazil, Greece 
+# We could also turn this into a function if we want to compare multiple countries' data at the same time
+multiple_line <- function(country_names) {
+  y_values <- lapply(country_names, function(country) {
+    as.numeric(country_desc(gni, country, "gniData"))
+  })
+  
+  df <- data.frame(x = extract_year(gni, "colname"), 
+                   country = rep(country_names, each = length(y_values[[1]])),
+                   y = unlist(y_values))
+  
+  ggplot(df, aes(x, y, color = country, group = country)) +
+    geom_line() +
+    labs(title = "GNI Per Capita Trends in Selected Countries",
+         x = "Year", y = "GNI Per Capita", color = "Country") +
+    scale_color_discrete(guide = "legend") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Example usage
+
+multiple_line(c("Zimbabwe", "Tonga", "Georgia", "Brazil", "Greece"))
+```
+```{r,fig.width = 7, results='hide'}
+# Similarly, we create a line plot of countries with max GNI value but not Extreme Value to compare between continent
+# Singapore, Switzerland, Canada, New Zealand, South Africa  
+multiple_line(c("Singapore", "Switzerland", "Canada", "New Zealand", "South Africa"))
+```
+
+As can be seen from the plot:
+
+- Singapore's income level is rapidly rising after 2006, surpassing Switzerland ever since. 
+- Canada's  GNI per capita is slightly higher than that of New Zealand, but with a similar growth curve, and the growth rate is not as fast as that of Singapore.  
+- Even though South Africa is the country with the highest GNI in Africa, its income level still has a very large gap with other countries, and the growth rate is also very low
+
+**Now, the growth rate comes up to be our next indicator.**
+
+### Scatter Plots of Growth Rate 
+
+```{r , warning=FALSE, fig.height = 7, fig.width = 8}
+options(scipen = 999)
+ growth_rate <- round((no_na_gni[, 39] - no_na_gni[, 8]) / no_na_gni[, 8] *100,0)
+
+
+ growth_table <- data.frame(Country = no_na_gni$Country, Continent = no_na_gni$Continent, GrowthRate = growth_rate, Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.)
+
+ summary(growth_rate)  # check summary of growthRate to set xlim y lim
+ 
+ ggplot(growth_table, aes(x=Latest, y=GrowthRate)) + 
+  geom_point(aes(col=Continent, size = 1.5))  + 
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_density_2d_filled(alpha = 0.5) +   # check dispersion
+  xlim(c(700, 67000)) +    # Drop some outliers
+  ylim(c(-50, 200)) + 
+  
+  labs(title="Latest GNI Data Vs Growth Rate(1990-2021)", 
+       x="Gross.National.Income.Per.Capita..2021", 
+       y="Growth Rate %") 
+ 
+```
+
+- In the range where GNI per capita is lower than 15000 and growth rate at 0-50%, the dispersion of data points is very dense,indicating that most of countries with lower GNI then world average have an average income growth rate of 25% (except African countries)
+- Also some of these low income countries enjoy highest growth rate more than 100%. Whereas countries with higher income levels, the growth rate is slightly concentrated at 50%.
+
+**As for continent**
+
+- Europe countries not only have higher GNI values, but also enjoy higher growth rate. 
+- Even though Africa's overall income level is low, it's growth rate is relative balanced. But still, most of the negative growth countries are in Africa.
+- Surprisingly, there are not many countries with low growth rates in Asia.
+
+```{r, warning=FALSE}
+# select countries with highest Growth rate
+low_gni <- growth_table[growth_table$GrowthRate > 100 , ]
+plot_ly(
+  low_gni, type = "scatter", mode = "markers", x=~Latest, y=~GrowthRate,
+  color=~Continent, size=~GrowthRate,
+  text = ~paste(Country, "<br>Grow Rate:", GrowthRate, "%<br>GNI:", Latest)
+) %>%
+layout(
+  title = "Countries With GNI Growth Rate Higher Than 100% <br>Hover to see country details!!!",
+  titlefont = list(size = 20),
+  xaxis = list(title = "Gross.National.Income.Per.Capita..2021"),
+  yaxis = list(title = "Growth Rate %", range = c(100, 1200)),
+  margin = list(t = 100)
+)
+
+```
+
+Most of countries with growth rate more than 200% are in Asia, and South Korea is the only two countries in the world also has GNI more than 40,000 (the other is Ireland).
+
+**These two scatter plots could check the distribution of countries in terms of the two dimensions of 2021 gni values and growth rates. They are both very important indicators to understand economic development level and sustainability, also helpful if we want to further forecast certain country's income level.**
+
+## Shiny App
+
+[My Shiny APP Youtube URL](https://www.youtube.com/watch?v=4xLDm6Taf5c&ab_channel=HazLi)
+
+```{r shiny, warning=FALSE, fig.width=10}
+# Load functions created in Rmd file and will be use in shiny
+extract_year <- function(dataset, option) {
+  x_values <- colnames(dataset)[8:ncol(dataset)]
+  new_column_names <- sub('.*\\.(\\d+)\\..*', '\\1', x_values)
+  new_data <- dataset
+  colnames(new_data)[8:ncol(new_data)] <- new_column_names
+  
+  if("colname" %in% option) {
+    return (new_column_names)
+  }
+  
+  if ("new" %in% option) {
+    return (new_data)
+  }
+}
+
+
+country_gni <- function(country, description) {
+  selected_country <- gni[gni$Country == country, ]
+
+  if ("rank" %in% description ) {
+    print(selected_country$HDI.Rank..2021.)
+  }
+  
+  if ("group" %in% description ) {
+    print(selected_country$Human.Development.Groups)
+  }
+  
+  if ("gniData" %in% description ) {
+    print(selected_country[, 8:39])
+  }
+}
+
+multiple_line <- function(country_names) {
+  y_values <- lapply(country_names, function(country) {
+    as.numeric(country_desc(gni, country, "gniData"))
+  })
+  
+  df <- data.frame(x = extract_year(gni, "colname"), 
+                   country = rep(country_names, each = length(y_values[[1]])),
+                   y = unlist(y_values))
+  
+  ggplot(df, aes(x, y, color = country, group = country)) +
+    geom_line() +
+    labs(title = "GNI Per Capita Trends in Selected Countries",
+         x = "Year", y = "GNI Per Capita", color = "Country") +
+    scale_color_discrete(guide = "legend") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+get_specific_summary <- function(group_column, specific) {
+  
+  group_summary <- no_na_gni  %>%
+    filter({{ group_column }} == {{ specific }} ) %>%
+    group_by({{ group_column }}, Human.Development.Groups) %>%
+    summarize(country_count = n(),
+              .groups = "drop") 
+  
+  return(group_summary)
+}
+
+no_na_gni <- na.omit(gni)
+
+# Call the extract_year function to extract year
+year <- extract_year(gni, "colname")
+
+
+shinyApp(
+
+##  Define UI
+  
+  ui <- fluidPage(theme = shinytheme("cosmo"),
+                
+                # In the navbar, we will have FIVE tabs to present different plots with unique functions
+                navbarPage(
+                  "Gross National Income Per Capita",
+                  
+                  # Tab 1: Line & Point - Country
+                  tabPanel("Line&Point-Country",
+                           sidebarPanel(
+                             selectInput(inputId = "country_input1", 
+                                         label = "Choose Country 1:",
+                                         choices = unique(gni$Country)),
+                             selectInput(inputId = "country_input2", 
+                                         label = "Choose Country 2:",
+                                         choices = unique(gni$Country)),br(),
+                             selectInput(inputId = "country_input3", 
+                                         label = "Country Data Details:",
+                                         choices = unique(gni$Country)),
+                             actionButton("update_button", "Update Plot"),
+                             width = 3
+                           ),
+                           mainPanel(
+                             fluidRow(
+                               plotOutput("plot1", height = "400px", width = "900px"),
+                               tags$div(style = "height: 10px;"), 
+                               plotlyOutput("plot2", height = "400px", width = "800px")
+                             )
+                           )
+                  ),
+                  
+                  # Tab 2: Pie - HD group
+                  tabPanel("Pie-HD group",
+                           sidebarPanel(
+                             selectInput(inputId = "input_continent", 
+                                         label = "Choose Continent:",
+                                         choices = unique(gni$Continent)),
+                             selectInput(inputId = "input_region", 
+                                         label = "Choose Region:",
+                                         choices = unique(no_na_gni$UNDP.Developing.Regions)),
+                             helpText(
+                               tags$p(
+                                 style = "font-size: 12px;",br(),
+                                 "# The Human Development Index (HDI)" ,br(),"measures human development by average achievement in three basic dimensions: standard of living, education and health, 
+                                 which are assessed by three indicators: GNI per capita, expected years of schooling and life expectancy.",br(),br(),
+                                 "# UNDP.Developing.Regions." ,br(),"- AS: Arab States" ,br(),"   
+                   - EAP: East Asia and the Pacific" ,br(),"  
+                   - ECA: Europe and Central Asia" ,br(),"   
+                   - LAC: Latin America and the Caribbean" ,br(),"  
+                   - SA: South Asia" ,br(),"   
+                   - SSA: Sub-Saharan Africa "
+                               )
+                             ),
+                             width = 3
+                           ),
+                           mainPanel(
+                             fluidRow(
+                               plotOutput("plot3", height = "400px", width = "900px"),
+                               tags$div(style = "height: 20px;"), 
+                               plotOutput("plot4", height = "400px", width = "900px")
+                             )
+                           )
+                  ),
+                  
+                  # Tab 3: Historgram - GNI 
+                  tabPanel("Historgram-2021GNI",
+                           sidebarPanel(
+                             
+                             sliderInput("bins", "Customize the partitions:", min = 0, max = 150000, value = 2500),
+                             
+                             width = 2
+                           ),
+                           mainPanel(
+                             fluidRow(
+                               plotOutput("plot5", height = "400px", width = "900px")
+                             )
+                           )
+                  ),
+                  
+                  # Tab 4:Scatter - Growth Rate
+                  tabPanel("Scatter-Growth Rate",
+                           sidebarPanel(
+                               width = 2,offset = 2,
+                                      sliderInput("rate", "Select Growth Rate Range (100%):", min = -100, max = 400, value = 100),
+                                      helpText(
+                                        tags$p(
+                                          style = "font-size: 19px;", br(), br(), br(), br(),br(),br(), br(), br(),br(),br(), br(), br(), br(),br(),
+                                          "# View dispersion of data points", br(), "by Continent or Global"
+                                        )
+                                      ),
+                              
+                                      selectInput(inputId = "input_continent_scatter", 
+                                                  label = "Choose Continent:",
+                                                  choices = c("Global", unique(gni$Continent)))
+                                  ),
+                           mainPanel(
+                             
+                               width = 9, 
+                               plotlyOutput("plot6", height = "500px", width = "700px"),
+                               tags$div(style = "height: 30px;"), 
+                               plotOutput("plot7", height = "600px", width = "700px")
+                             
+                           )
+                  ),
+                  
+                  # Tab 5:Box - Details
+                  tabPanel("BOX-Continent Details",
+                           sidebarPanel(
+                             width = 2,offset = 2,
+                                      checkboxGroupInput("Details", "Select Where You Want To Know:",
+                                                choices = unique(gni$Continent))
+                           ),
+                           mainPanel(
+                             fluidRow(
+                               plotOutput("plot8", height = "600px", width = "900px"),br(),br(),br(), br(), br(),
+                               tableOutput("table")
+                             )
+                           ))
+)),
+
+# Define the server
+server <- function(input, output, session) {
+  options(warn = -1)
+  output$plot1 <- renderPlot({
+    
+      validate(
+        need(input$update_button > 0, "Please select a country. Click 'Update Plot' to generate the plot")
+      )
+    
+    countryone <- input$country_input1
+    countrytwo <- input$country_input2
+    countryone_gni <- country_gni(countryone, "gniData")
+    countrytwo_gni <- country_gni(countrytwo, "gniData")
+    
+
+    two_gni <- data.frame(x = year, y1 =as.numeric(countryone_gni[1,]), y2 =as.numeric(countrytwo_gni[1,]) )
+    
+    ggplot(data = two_gni, aes(x = year, y, group = 1)) +
+      geom_line(aes(y = y1, color = countryone)) +
+      geom_point(aes(y = y1, color = countryone)) +
+      geom_line(aes(y = y2, color = countrytwo)) +
+      geom_point(aes(y = y2,  color = countrytwo)) +
+      labs(title =paste(countryone, "&", countrytwo, "GNI Per Capita Trend Over Years") ,
+           x = "Year", y = "Gross National Income", color = "Country") +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold", size=16),
+            axis.text.x = element_text(angle = 45, hjust = 1))
+
+  })
+  
+  ## Another plot with interactive line and point plot to present selected country's GNI data at certain year
+  # Using Plotly
+  
+  output$plot2 <- renderPlotly({
+    validate(
+      need(input$update_button > 0, "Please select a country. Click 'Update Plot' to generate the plot")
+    )
+    selected_country <- input$country_input3
+    country_gni_data <- country_gni(selected_country, "gniData")
+    
+    country_data <- data.frame(x = year, y = as.numeric(country_gni_data[1,]))
+    
+    p <- plot_ly(data = country_data, x = ~x, y = ~y, type = 'scatter', mode = 'lines+markers', name = selected_country) %>%
+      layout(title = paste(selected_country, "GNI Per Capita Over Years  # Hover to check specific data!!!"),
+             xaxis = list(title = "Year", tickangle = -45),
+             yaxis = list(title = "Gross National Income")) 
+    
+    p
+  })
+  
+   ## tab 2 HD group
+  output$plot3 <- renderPlot({
+
+    hd_group <- data.frame(get_specific_summary(Continent, input$input_continent))
+   
+    ggplot(data = hd_group, aes(x="", y = country_count, fill = Human.Development.Groups)) +
+      geom_bar(stat = "identity", width = 1) +
+      geom_text(aes(label = paste(country_count, " (", scales::percent(country_count / sum(country_count)), ")")),
+                position = position_stack(vjust = 0.5),
+                size = 5, family = "bold") +
+      coord_polar("y", start = 0) +
+      labs(title = paste("HD Group Proportions in", input$input_continent),
+           fill = "HD Group") +
+      theme(
+        plot.title = element_text(size = 16)
+      )
+  })
+  output$plot4 <- renderPlot({
+    
+    hd_group <- data.frame(get_specific_summary(UNDP.Developing.Regions, input$input_region))
+    
+    ggplot(data = hd_group, aes(x="", y = country_count, fill = Human.Development.Groups)) +
+      geom_bar(stat = "identity", width = 1) +
+      coord_polar("y", start = 0) +
+      geom_text(aes(label = paste(country_count, " (", scales::percent(country_count / sum(country_count)), ")")),
+                position = position_stack(vjust = 0.5),
+                size = 5, family = "bold") +
+      labs(title = paste("HD Group Proportions in", input$input_region, " (Only Count Developing Countries)"),
+           fill = "HD Group") +
+      theme(
+        plot.title = element_text(size = 16)
+      )
+
+  })
+
+    ##tab 3 GNI&Growth Rate
+  output$plot5 <- renderPlot({
+    options(scipen = 999)
+    
+    latest_table <- data.frame(Country = no_na_gni$Country,
+                               Continent = no_na_gni$Continent,
+                                
+                               Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.)
+    
+    ggplot(data = latest_table, aes(x = Latest, fill = Continent)) +
+      
+      geom_histogram(binwidth = input$bins) + 
+      
+      geom_vline(aes(xintercept=mean(Latest)), color="darkblue", linetype="dashed", size=1)+
+      
+      
+      
+      labs(
+        title = "Histogram of GNI Per Capita Data",
+        x = "GNI Range",
+        y = "Count of Countries"
+      ) +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 0.5, face = "bold", size = 14),
+            axis.text.y = element_text(size = 16),
+            plot.title = element_text(size = 20))
+  }, height = 700, width = 800)
+  
+  
+    ## tab4 scatter
+  output$plot6 <- renderPlotly({
+    
+    growth_rate <- round((no_na_gni[, 39] - no_na_gni[, 8]) / no_na_gni[, 8] * 100, 0)
+    growth_scatter <- data.frame(Country = no_na_gni$Country, 
+                                 Continent = no_na_gni$Continent, 
+                                 GrowthRate = growth_rate, 
+                                 Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.)
+  
+    
+        # Set the y-axis range according to the range of the sliderInput 
+    y_range <- case_when(
+      input$rate <= 0 ~ c(-100, 0), input$rate > -0 && input$rate<=100 ~ c(0, 100), input$rate > 100 && input$rate<=200 ~ c(100, 200),
+      input$rate > 200 && input$rate<=300 ~ c(200, 300), input$rate > 300 && input$rate<=400 ~ c(300, 400)
+    )
+        
+    plot_ly(growth_scatter, 
+            type = "scatter", mode = "markers", x = ~Latest, y = ~GrowthRate,
+            color = ~Continent, size = ~GrowthRate,
+            text = ~paste(Country, "<br>Grow Rate:", GrowthRate, "%<br>GNI:", Latest)
+    ) %>%
+      layout(
+        
+        title = list(text = "Latest GNI Per Capita Vs Growth Rate(1990-2021) <br>Hover to see country details!!!", 
+                     size = 20),  
+        xaxis = list(title = "Gross.National.Income.Per.Capita..2021"),
+        yaxis = list(title = "Growth Rate %", range = y_range),
+        margin = list(t = 100),
+        height = 500, width = 700
+      )
+    
+  })
+  
+  output$plot7 <- renderPlot({
+  
+    growth_rate <- round((no_na_gni[, 39] - no_na_gni[, 8]) / no_na_gni[, 8] *100,0)
+   growth_table <- data.frame(Country = no_na_gni$Country, Continent = no_na_gni$Continent, GrowthRate = growth_rate, Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.)
+    
+    selected_continent <- input$input_continent_scatter
+    
+    aim <- growth_table %>% filter(Continent == selected_continent)
+    
+    # set unique range of aimed continent
+    min_gni <- min(aim$Latest)
+    max_gni <-max(aim$Latest)
+    min_rate <-min(aim$GrowthRate)
+    max_rate <-max(aim$GrowthRate)
+    
+    if (selected_continent == "Global") {
+      ggplot(growth_table, aes(x = Latest, y = GrowthRate)) + 
+        geom_point(aes(col = Continent, size = 1.5)) + 
+        geom_density_2d_filled(alpha = 0.5) +
+        xlim(c(700, 67000)) +
+        ylim(c(-50, 200)) +
+        labs(title = paste(selected_continent, " GNI Data Vs Growth Rate(1990-2021)"), 
+             x = "Gross.National.Income.Per.Capita..2021", 
+             y = "Growth Rate %") +
+        theme(
+          plot.title = element_text(size = 16),  
+          axis.title = element_text(size = 16),
+          axis.text = element_text(size = 14)
+        )
+    } else {
+      ggplot(aim, 
+             aes(x = Latest, y = GrowthRate)) + 
+        geom_point(aes(col = Continent, size = Latest),color="blue") + 
+        geom_density_2d_filled(alpha = 0.5) +
+        xlim(c(min_gni, max_gni)) +
+        ylim(c(min_rate, max_rate)) +
+        labs(title = paste(selected_continent, " GNI Data Vs Growth Rate(1990-2021)"), 
+             x = "Gross.National.Income.Per.Capita..2021", 
+             y = "Growth Rate %") +
+        theme(
+          plot.title = element_text(size = 16),  
+          axis.title = element_text(size = 16),
+          axis.text = element_text(size = 14)
+        )
+    }
+})
+  
+  output$plot8 <- renderPlot({
+
+    selected_continents <- input$Details
+    filtered_data <- gni %>%
+      filter(Continent %in% selected_continents) %>%
+      mutate(`Average GNI (1990-2021)` = rowMeans(.[8:39]))
+    
+    continent_combined <- ggplot(filtered_data, aes(x = Continent, y = `Average GNI (1990-2021)`, fill = Continent)) +
+      geom_boxplot(position = position_dodge(width = 0.8)) +
+      
+      stat_summary(fun = "mean", geom = "point", shape = 8,
+                   size = 3, color = "white")+
+      labs(title = 'Box Plot of Average GNI by Continent',
+           x = 'Continent',
+           y = 'Average GNI') +
+      theme_minimal()+
+      theme(
+        plot.title = element_text(size = 16),  
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)
+      )
+    
+    continent_combined
+  })
+  
+  output$table <- renderTable({
+    growth_rate <- round((no_na_gni[, 39] - no_na_gni[, 8]) / no_na_gni[, 8] * 100, 0) ## drop na
+    mean = round(rowMeans(no_na_gni[8:39], na.rm = TRUE), 0)
+    
+    ## create a new data frame and we will be using Growth Rate $ AVG as Indicator a lot later
+    growth_table_new <- data.frame(
+      Country = no_na_gni$Country,
+      Continent = no_na_gni$Continent,
+      Latest = no_na_gni$Gross.National.Income.Per.Capita..2021.,
+      GrowthRate = growth_rate,
+      AVG = mean
+    )
+    
+    selected_continent <- input$Details
+    
+    continent_summary <- growth_table_new %>%
+      group_by(Continent) %>%
+      summarize(
+        avg_gni = round(mean(AVG), 1),
+        min_gni = round(min(Latest), 1),
+        min_gni_country = Country[which.min(Latest)],
+        max_gni = round(max(Latest), 1),
+        max_gni_country = Country[which.max(Latest)],
+        `avg_rate%` = round(mean(GrowthRate), 1),
+        `min_rate%` = min(GrowthRate),
+        min_rate_country = Country[which.min(GrowthRate)],
+        `max_rate%` = max(GrowthRate),
+        max_rate_country = Country[which.max(GrowthRate)]
+      ) %>%
+      filter(Continent %in% selected_continent)
+    
+  })
+  
+}
+
+)
+
+```
